@@ -14,17 +14,25 @@ from telegram.ext import (
 
 # Enable logging
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
 )
 log = logging.getLogger(__name__)
 
-# Get environment variables
+# Load environment variables
 API_TOKEN = os.environ.get("API_TOKEN")
-ADMIN_ID = int(os.environ.get("ADMIN_ID"))  # Ensure ADMIN_ID is an integer
-DEVELOPER_CHAT_ID = int(os.environ.get("DEVELOPER_CHAT_ID", ADMIN_ID)) # Optional, defaults to ADMIN_ID if not set.
+ADMIN_ID = os.environ.get("ADMIN_ID")
+DEVELOPER_CHAT_ID = os.environ.get("DEVELOPER_CHAT_ID", ADMIN_ID)
 
+if not API_TOKEN or not ADMIN_ID:
+    raise ValueError("Missing API_TOKEN or ADMIN_ID environment variable")
+
+ADMIN_ID = int(ADMIN_ID)
+DEVELOPER_CHAT_ID = int(DEVELOPER_CHAT_ID)
 
 TYPING_REPLY = 1
+
+# ---------------- Handlers ---------------- #
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! Send your feedback or queries to the admin.")
@@ -36,17 +44,15 @@ async def handle_feedback_from_user(update: Update, context: ContextTypes.DEFAUL
     message = update.message
     feedback_text = message.text or message.caption or "No text provided"
 
-    # Create Reply button inline
-    keyboard = [
-        [InlineKeyboardButton(text="Reply", callback_data=f"reply:{chat_id}")]
-    ]
+    # Reply button for admin
+    keyboard = [[InlineKeyboardButton("Reply", callback_data=f"reply:{chat_id}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Forward the feedback to the admin
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"💬 New Feedback from @{user.username} ({user.first_name} {user.last_name or ''}, ID: {user.id}):\n\n{feedback_text}",
+            text=f"💬 New Feedback from @{user.username or '(no username)'} "
+                 f"({user.first_name} {user.last_name or ''}, ID: {user.id}):\n\n{feedback_text}",
             reply_markup=reply_markup,
         )
         await update.message.reply_text("✅ Your feedback has been sent to the admin.")
@@ -56,18 +62,20 @@ async def handle_feedback_from_user(update: Update, context: ContextTypes.DEFAUL
 
 
 async def admin_click_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == ADMIN_ID:
-        query = update.callback_query
-        await query.answer()
-
-        target_user_id = query.data.split(":")[1]  # Get the target user ID from the callback data
-        context.chat_data["reply_target_user_id"] = target_user_id
-
-        await query.edit_message_text(text=f"✍️ Replying to user {target_user_id}.  Type your message and /cancel to cancel.")
-        return TYPING_REPLY
-    else:
+    if update.effective_user.id != ADMIN_ID:
         await update.callback_query.answer("Unauthorized.", show_alert=True)
         return ConversationHandler.END
+
+    query = update.callback_query
+    await query.answer()
+    target_user_id = query.data.split(":")[1]
+    context.chat_data["reply_target_user_id"] = target_user_id
+
+    await query.edit_message_text(
+        text=f"✍️ Replying to user {target_user_id}. Type your message and /cancel to cancel."
+    )
+    return TYPING_REPLY
+
 
 async def admin_send_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_user_id = context.chat_data.get("reply_target_user_id")
@@ -76,11 +84,9 @@ async def admin_send_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     reply_text = update.message.text
-
-    # Send to the specific user
     try:
         await context.bot.send_message(
-            chat_id=int(target_user_id),  # Ensure target_user_id is an integer
+            chat_id=int(target_user_id),
             text=f"💬 Admin replied:\n\n{reply_text}"
         )
         await update.message.reply_text("✅ Reply sent to the user.")
@@ -88,8 +94,6 @@ async def admin_send_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Could not deliver reply (maybe the user blocked the bot).\nError: {e}")
         log.error(f"Error sending reply to user {target_user_id}: {e}")
 
-
-    # Clear target & end conversation
     context.chat_data.pop("reply_target_user_id", None)
     return ConversationHandler.END
 
@@ -101,33 +105,27 @@ async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Log the error and send a telegram message to notify the developer."""
-    # Log the error before we do anything else, so we can see it even if something breaks.
-    log.error(msg="Exception while handling an update:", exc_info=context.error)
-
-    # traceback.format_exception returns the usual python message about an exception, but as a
-    # string!
-    # the "effective chat" is the chat that is targeted by the update.
-    if update.effective_chat:
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    log.error("Exception while handling an update:", exc_info=context.error)
+    if update and getattr(update, "effective_chat", None):
         await context.bot.send_message(
-            chat_id=DEVELOPER_CHAT_ID, text=f"Update {update} caused error {context.error}"
+            chat_id=DEVELOPER_CHAT_ID,
+            text=f"Update {update} caused error {context.error}"
         )
-    # Finally, let the user know that something went wrong.
-    await update.message.reply_text("Oops! Something went wrong. We've notified the developers.")
+    if hasattr(update, "message") and update.message:
+        await update.message.reply_text("Oops! Something went wrong. We've notified the developers.")
 
+
+# ---------------- Main ---------------- #
 
 def main():
     app = Application.builder().token(API_TOKEN).build()
 
-    # Add error handler
-    app.add_error_handler(error_handler)
-
-    # Conversation for admin reply flow (button -> type message)
+    # Conversation for admin reply flow
     reply_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_click_reply, pattern=r"^reply:\d+$")],
         states={
-            TYPING_REPLY: [MessageHandler(filters.TEXT & filters.User(ADMIN_ID), admin_send_reply)],
+            TYPING_REPLY: [MessageHandler(filters.TEXT & filters.User(ADMIN_ID), admin_send_reply)]
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
         per_chat=True,
@@ -140,14 +138,15 @@ def main():
     # Commands
     app.add_handler(CommandHandler("start", start))
 
-    # Admin-only messages outside the convo are ignored (so admin isn’t treated as a normal user)
-    # Users’ feedback (text/caption) — EXCLUDE admin explicitly
+    # User feedback
     user_text_filter = filters.TEXT & ~filters.COMMAND & ~filters.User(ADMIN_ID)
     app.add_handler(MessageHandler(user_text_filter, handle_feedback_from_user))
 
-    # Optional: support captions from media by catching non-text messages with captions
     user_caption_filter = filters.CaptionRegex(".*") & ~filters.User(ADMIN_ID)
     app.add_handler(MessageHandler(user_caption_filter, handle_feedback_from_user))
+
+    # Error handler
+    app.add_error_handler(error_handler)
 
     log.info("Bot starting…")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -155,8 +154,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
