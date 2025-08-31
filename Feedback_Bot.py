@@ -19,7 +19,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # Get environment variables
-TOKEN_ID = os.environ.get("TOKEN_ID")
+API_TOKEN = os.environ.get("API_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID"))  # Ensure ADMIN_ID is an integer
 DEVELOPER_CHAT_ID = int(os.environ.get("DEVELOPER_CHAT_ID", ADMIN_ID)) # Optional, defaults to ADMIN_ID if not set.
 
@@ -118,7 +118,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    app = Application.builder().token(TOKEN_ID).build()
+    app = Application.builder().token(API_TOKEN).build()
 
     # Add error handler
     app.add_error_handler(error_handler)
@@ -155,6 +155,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
