@@ -3,7 +3,7 @@ import os
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application,
+    Applications,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
@@ -12,14 +12,14 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# Enable logging
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 log = logging.getLogger(__name__)
 
-# Load environment variables
+# environment variable loading
 API_TOKEN = os.environ.get("API_TOKEN")
 ADMIN_ID = os.environ.get("ADMIN_ID")
 DEVELOPER_CHAT_ID = os.environ.get("DEVELOPER_CHAT_ID", ADMIN_ID)
@@ -32,7 +32,6 @@ DEVELOPER_CHAT_ID = int(DEVELOPER_CHAT_ID)
 
 TYPING_REPLY = 1
 
-# ---------------- Handlers ---------------- #
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! Send your feedback or queries to the admin.")
@@ -44,21 +43,20 @@ async def handle_feedback_from_user(update: Update, context: ContextTypes.DEFAUL
     message = update.message
     feedback_text = message.text or message.caption or "No text provided"
 
-    # Reply button for admin
     keyboard = [[InlineKeyboardButton("Reply", callback_data=f"reply:{chat_id}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"💬 New Feedback from @{user.username or '(no username)'} "
+            text=f" New Feedback from @{user.username } "
                  f"({user.first_name} {user.last_name or ''}, ID: {user.id}):\n\n{feedback_text}",
             reply_markup=reply_markup,
         )
-        await update.message.reply_text("✅ Your feedback has been sent to the admin.")
+        await update.message.reply_text(" Your feedback has been sent to the admin.")
     except Exception as e:
         log.error(f"Error forwarding message to admin: {e}")
-        await update.message.reply_text("❌ Failed to send feedback. Please try again later.")
+        await update.message.reply_text(" Failed to send feedback. Please try again later.")
 
 
 async def admin_click_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,7 +70,7 @@ async def admin_click_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["reply_target_user_id"] = target_user_id
 
     await query.edit_message_text(
-        text=f"✍️ Replying to user {target_user_id}. Type your message and /cancel to cancel."
+        text=f" Replying to user {target_user_id}. Type your message and /cancel to cancel."
     )
     return TYPING_REPLY
 
@@ -80,18 +78,18 @@ async def admin_click_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_send_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_user_id = context.chat_data.get("reply_target_user_id")
     if not target_user_id:
-        await update.message.reply_text("⚠️ No reply target found. Tap a Reply button again.")
+        await update.message.reply_text(" No reply target found. Tap a Reply button again.")
         return ConversationHandler.END
 
     reply_text = update.message.text
     try:
         await context.bot.send_message(
             chat_id=int(target_user_id),
-            text=f"💬 Admin replied:\n\n{reply_text}"
+            text=f" Admin replied:\n\n{reply_text}"
         )
-        await update.message.reply_text("✅ Reply sent to the user.")
+        await update.message.reply_text("Reply sent to the user.")
     except Exception as e:
-        await update.message.reply_text(f"❌ Could not deliver reply (maybe the user blocked the bot).\nError: {e}")
+        await update.message.reply_text(f" Could not deliver reply (maybe the user blocked the bot).\nError: {e}")
         log.error(f"Error sending reply to user {target_user_id}: {e}")
 
     context.chat_data.pop("reply_target_user_id", None)
@@ -154,3 +152,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
